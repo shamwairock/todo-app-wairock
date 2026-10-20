@@ -4,3 +4,7 @@ publish-output/
 node_modules/
 .vercel/
 *.user
+
+.env
+.env.*
+!.env.example
