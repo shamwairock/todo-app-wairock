@@ -1,0 +1,53 @@
+@if (Item is not null)
+{
+    <div class="modal-overlay" @onclick="Cancel">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+            <h2>&gt; Edit Objective</h2>
+            <input @ref="_input" class="modal-input" @bind="_text" @bind:event="oninput" @onkeydown="HandleKeyDown" />
+            <div class="modal-actions">
+                <button type="button" class="modal-btn cancel" @onclick="Cancel">Cancel</button>
+                <button type="button" class="modal-btn confirm" @onclick="Confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public TodoItem? Item { get; set; }
+    [Parameter] public EventCallback<string> OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string _text = "";
+    private ElementReference _input;
+    private TodoItem? _lastItem;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Item != _lastItem)
+        {
+            _lastItem = Item;
+            if (Item is not null)
+            {
+                _text = Item.Text;
+                await Task.Yield();
+                try { await _input.FocusAsync(); } catch { }
+            }
+        }
+    }
+
+    private Task Cancel() => OnCancel.InvokeAsync();
+
+    private async Task Confirm()
+    {
+        if (!string.IsNullOrWhiteSpace(_text))
+        {
+            await OnConfirm.InvokeAsync(_text.Trim());
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Confirm();
+        else if (e.Key == "Escape") await Cancel();
+    }
+}

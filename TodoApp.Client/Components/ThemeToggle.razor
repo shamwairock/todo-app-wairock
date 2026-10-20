@@ -1,0 +1,30 @@
+@inject IJSRuntime JS
+
+<div class="theme-bar">
+    <button type="button" class="theme-btn @(CurrentTheme == "dark" ? "active" : "")" @ref="_darkBtn"
+            title="Dark mode" @onclick='() => Select("dark")'>
+        <svg viewBox="0 0 24 24"><path d="M12.1 2a10 10 0 1 0 9.9 11.9A8 8 0 0 1 12.1 2z" /></svg>
+        Dark
+    </button>
+    <button type="button" class="theme-btn @(CurrentTheme == "light" ? "active" : "")" @ref="_lightBtn"
+            title="Light mode" @onclick='() => Select("light")'>
+        <svg viewBox="0 0 24 24"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v3M12 20v3M3.5 3.5l2.1 2.1M18.4 18.4l2.1 2.1M1 12h3M20 12h3M3.5 20.5l2.1-2.1M18.4 5.6l2.1-2.1"
+                  stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" /></svg>
+        Light
+    </button>
+</div>
+
+@code {
+    [Parameter] public string CurrentTheme { get; set; } = "dark";
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+
+    private ElementReference _darkBtn;
+    private ElementReference _lightBtn;
+
+    private async Task Select(string theme)
+    {
+        await JS.InvokeVoidAsync("todoEffects.pulse", theme == "dark" ? _darkBtn : _lightBtn);
+        await JS.InvokeVoidAsync("todoAudio.play", "theme");
+        await OnSelect.InvokeAsync(theme);
+    }
+}

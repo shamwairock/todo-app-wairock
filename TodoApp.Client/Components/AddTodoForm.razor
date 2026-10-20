@@ -1,0 +1,64 @@
+@inject IJSRuntime JS
+
+<form class="add-form" @onsubmit="Submit">
+    <input type="text" @bind="_text" @bind:event="oninput" placeholder="New objective..." autofocus />
+
+    <div class="priority-dropdown" @onfocusout="ClosePriorityDelayed">
+        <button type="button" class="priority-select-btn" @onclick="TogglePriority">
+            <span class="priority-dot priority-@(_priority.ToString().ToLowerInvariant())"></span>
+            @_priority
+            <svg class="chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        @if (_priorityOpen)
+        {
+            <ul class="priority-options">
+                @foreach (var p in PriorityValues)
+                {
+                    <li class="priority-@(p.ToString().ToLowerInvariant()) @(p == _priority ? "selected" : "")" @onclick="() => SelectPriority(p)">
+                        <span class="priority-dot priority-@(p.ToString().ToLowerInvariant())"></span>
+                        @p
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+
+    <button type="submit" class="icon-btn add-btn" @ref="_addBtn" title="Add">
+        <svg viewBox="0 0 24 24"><path d="M11 3h2v8h8v2h-8v8h-2v-8H3v-2h8z" /></svg>
+    </button>
+</form>
+
+@code {
+    [Parameter] public EventCallback<(string Text, Priority Priority)> OnAdd { get; set; }
+
+    private static readonly Priority[] PriorityValues = Enum.GetValues<Priority>();
+
+    private string _text = "";
+    private Priority _priority = Priority.Medium;
+    private bool _priorityOpen;
+    private ElementReference _addBtn;
+
+    private void TogglePriority() => _priorityOpen = !_priorityOpen;
+
+    private void SelectPriority(Priority p)
+    {
+        _priority = p;
+        _priorityOpen = false;
+    }
+
+    private async Task ClosePriorityDelayed()
+    {
+        await Task.Delay(150);
+        _priorityOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task Submit()
+    {
+        await JS.InvokeVoidAsync("todoEffects.pulse", _addBtn);
+        if (string.IsNullOrWhiteSpace(_text)) return;
+
+        await OnAdd.InvokeAsync((_text.Trim(), _priority));
+        _text = "";
+    }
+}

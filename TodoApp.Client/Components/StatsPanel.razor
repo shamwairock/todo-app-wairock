@@ -1,0 +1,23 @@
+<div class="stats-panel">
+    <div class="stats-level">RANK @Level</div>
+    <div class="xp-bar-track" title="@XpIntoLevel / @XpForNextLevel XP">
+        <div class="xp-bar-fill" style="width: @(Percent)%"></div>
+    </div>
+    <div class="stats-item"><strong>@XpIntoLevel</strong>/@XpForNextLevel XP</div>
+    <div class="stats-item">Today: <strong>@CompletedToday</strong></div>
+    @if (Combo >= 2)
+    {
+        <div class="combo-badge @(ComboFlash ? "flash" : "")">COMBO x@Combo</div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Level { get; set; }
+    [Parameter] public int XpIntoLevel { get; set; }
+    [Parameter] public int XpForNextLevel { get; set; }
+    [Parameter] public int Combo { get; set; }
+    [Parameter] public int CompletedToday { get; set; }
+    [Parameter] public bool ComboFlash { get; set; }
+
+    private double Percent => XpForNextLevel == 0 ? 0 : Math.Min(100, 100.0 * XpIntoLevel / XpForNextLevel);
+}

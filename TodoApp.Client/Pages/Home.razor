@@ -1,0 +1,200 @@
+﻿@page "/"
+@implements IDisposable
+
+<PageTitle>Todo</PageTitle>
+
+@if (_levelUpText is not null)
+{
+    <div class="levelup-toast">@_levelUpText</div>
+}
+
+<EditModal Item="@_editingItem" OnConfirm="HandleEditConfirm" OnCancel="HandleEditCancel" />
+
+<ThemeToggle CurrentTheme="@_theme" OnSelect="HandleThemeSelect" />
+
+<div class="layout">
+    <div class="app-main">
+        <h1>&gt; Objectives</h1>
+
+        <StatsPanel Level="@_level" XpIntoLevel="@_xpIntoLevel" XpForNextLevel="@_xpForNextLevel"
+                    Combo="@Gamification.Combo" CompletedToday="@Todos.CompletedTodayCount" ComboFlash="@_comboFlash" />
+
+        <AddTodoForm OnAdd="HandleAdd" />
+
+        <ul class="todo-list">
+            @foreach (var item in Todos.Items)
+            {
+                <TodoItemRow @key="item.Id" Item="item" Removing="@_removingIds.Contains(item.Id)"
+                             OnToggle="HandleToggle" OnEdit="HandleEdit" OnDelete="HandleDelete" />
+            }
+        </ul>
+    </div>
+
+    <AuditLogPanel Entries="Audit.Entries" Collapsed="@_auditCollapsed" OnToggleCollapsed="HandleToggleAuditCollapsed" />
+</div>
+
+@code {
+    [Inject] private TodoStore Todos { get; set; } = null!;
+    [Inject] private AuditLogService Audit { get; set; } = null!;
+    [Inject] private GamificationService Gamification { get; set; } = null!;
+    [Inject] private PersistenceService Persistence { get; set; } = null!;
+    [Inject] private TodoApiClient Api { get; set; } = null!;
+    [Inject] private IJSRuntime JS { get; set; } = null!;
+
+    private string _theme = "dark";
+    private bool _auditCollapsed;
+    private string? _levelUpText;
+    private bool _comboFlash;
+    private TodoItem? _editingItem;
+    private readonly HashSet<Guid> _removingIds = new();
+
+    private int _level;
+    private int _xpIntoLevel;
+    private int _xpForNextLevel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _theme = await Persistence.LoadThemeAsync();
+        _auditCollapsed = await Persistence.LoadAuditCollapsedAsync();
+
+        var saved = await Persistence.LoadStateAsync();
+        if (saved is not null)
+        {
+            Todos.LoadState(saved.Items);
+            Audit.LoadState(saved.AuditEntries);
+            Gamification.LoadState(saved.TotalXp);
+        }
+
+        // Postgres (Neon) is the source of truth for todo items when reachable; the
+        // localStorage copy above is just the offline fallback used until the
+        // database connection string is wired up (or the API is unreachable).
+        var remoteItems = await Api.TryGetAllAsync();
+        if (remoteItems is not null)
+        {
+            Todos.LoadState(remoteItems);
+        }
+
+        await JS.InvokeVoidAsync("todoEffects.setTheme", _theme);
+
+        RecalculateProgress();
+
+        Todos.OnChange += HandleChanged;
+        Audit.OnChange += HandleChanged;
+        Gamification.OnChange += HandleGamificationChanged;
+        Todos.OnCompleted += HandleCompleted;
+    }
+
+    private void RecalculateProgress()
+    {
+        (_level, _xpIntoLevel, _xpForNextLevel) = LevelCalculator.GetProgress(Gamification.TotalXp);
+    }
+
+    private void HandleChanged()
+    {
+        StateHasChanged();
+        _ = PersistAsync();
+    }
+
+    private void HandleGamificationChanged()
+    {
+        RecalculateProgress();
+        HandleChanged();
+    }
+
+    private Task PersistAsync() =>
+        Persistence.SaveStateAsync(Todos.Items, Audit.Entries, Gamification.TotalXp);
+
+    private async void HandleCompleted(TodoItem item, CompletionResult result)
+    {
+        await JS.InvokeVoidAsync("todoAudio.play", "complete");
+
+        if (result.Combo >= 2)
+        {
+            await JS.InvokeVoidAsync("todoAudio.play", "combo");
+            _comboFlash = true;
+            StateHasChanged();
+            await Task.Delay(400);
+            _comboFlash = false;
+            StateHasChanged();
+        }
+
+        if (result.LeveledUp)
+        {
+            await JS.InvokeVoidAsync("todoAudio.play", "levelup");
+            _levelUpText = $"Level Up! Rank {result.Level}";
+            StateHasChanged();
+            await Task.Delay(2200);
+            _levelUpText = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleAdd((string Text, Priority Priority) data)
+    {
+        var item = Todos.Add(data.Text, data.Priority);
+        await JS.InvokeVoidAsync("todoAudio.play", "add");
+        _ = Api.TryCreateAsync(item);
+    }
+
+    private async Task HandleToggle(TodoItem item)
+    {
+        var wasDone = item.Done;
+        Todos.ToggleDone(item);
+        if (wasDone)
+        {
+            await JS.InvokeVoidAsync("todoAudio.play", "uncomplete");
+        }
+        _ = Api.TryUpdateAsync(item);
+    }
+
+    private Task HandleEdit(TodoItem item)
+    {
+        _editingItem = item;
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleEditConfirm(string newText)
+    {
+        if (_editingItem is not null)
+        {
+            Todos.Edit(_editingItem, newText);
+            await JS.InvokeVoidAsync("todoAudio.play", "edit");
+            _ = Api.TryUpdateAsync(_editingItem);
+        }
+        _editingItem = null;
+    }
+
+    private void HandleEditCancel() => _editingItem = null;
+
+    private async Task HandleDelete(TodoItem item)
+    {
+        await JS.InvokeVoidAsync("todoAudio.play", "delete");
+        _removingIds.Add(item.Id);
+        StateHasChanged();
+        await Task.Delay(200);
+        Todos.Delete(item);
+        _removingIds.Remove(item.Id);
+        _ = Api.TryDeleteAsync(item.Id);
+    }
+
+    private async Task HandleThemeSelect(string theme)
+    {
+        _theme = theme;
+        await JS.InvokeVoidAsync("todoEffects.setTheme", theme);
+        await Persistence.SaveThemeAsync(theme);
+    }
+
+    private async Task HandleToggleAuditCollapsed()
+    {
+        _auditCollapsed = !_auditCollapsed;
+        await Persistence.SaveAuditCollapsedAsync(_auditCollapsed);
+    }
+
+    public void Dispose()
+    {
+        Todos.OnChange -= HandleChanged;
+        Audit.OnChange -= HandleChanged;
+        Gamification.OnChange -= HandleGamificationChanged;
+        Todos.OnCompleted -= HandleCompleted;
+    }
+}

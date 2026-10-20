@@ -1,0 +1,40 @@
+@inject IJSRuntime JS
+
+<div class="audit-log-wrap @(Collapsed ? "collapsed" : "")">
+    <button type="button" class="audit-toggle" @ref="_toggleBtn" title="Toggle audit log" @onclick="HandleToggle">
+        <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </button>
+    <div class="audit-log">
+        <div class="audit-log-inner">
+            <h2>&gt; Audit Log</h2>
+            <ul>
+                @if (Entries.Count == 0)
+                {
+                    <li class="empty">No activity yet.</li>
+                }
+                else
+                {
+                    @foreach (var entry in Entries)
+                    {
+                        <li><span class="ts">@entry.Timestamp.ToString("HH:mm:ss"):</span> @entry.Message</li>
+                    }
+                }
+            </ul>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<AuditEntry> Entries { get; set; } = Array.Empty<AuditEntry>();
+    [Parameter] public bool Collapsed { get; set; }
+    [Parameter] public EventCallback OnToggleCollapsed { get; set; }
+
+    private ElementReference _toggleBtn;
+
+    private async Task HandleToggle()
+    {
+        await JS.InvokeVoidAsync("todoEffects.pulse", _toggleBtn);
+        await JS.InvokeVoidAsync("todoAudio.play", "toggle");
+        await OnToggleCollapsed.InvokeAsync();
+    }
+}
